@@ -40,6 +40,13 @@ final class GestureEngine: @unchecked Sendable {
         }
     }
 
+    func reset() {
+        queue.sync {
+            recognizer.reset()
+            latestFrames = [:]
+        }
+    }
+
     func receive(_ frame: TouchFrame) {
         queue.async {
             self.latestFrames[frame.device] = (frame, DispatchTime.now().uptimeNanoseconds)
@@ -79,19 +86,18 @@ func accessibilityTrusted(prompt: Bool) -> Bool {
 
 func printHelp() {
     print("""
-    TrackpadGestures — 不依赖 BetterTouchTool 的原生触控板手势
+    TrackpadGestures — 原生触控板手势
 
     用法：
       TrackpadGestures check              检查触控板接口、设备和辅助功能权限
       TrackpadGestures observe [--verbose] 只观察/识别，不执行按键或截图
-      TrackpadGestures run                监听并执行五个手势
+      TrackpadGestures run                监听并执行普通手势
       TrackpadGestures self-test          运行合成触点与定时器自检
       TrackpadGestures action-check copy|paste|delete|hold
       TrackpadGestures action-check image-file <PNG路径>
-                                          检查系统动作/截图剪贴板链路
 
-    手势：双指并拢复制；双指分开粘贴；三指并拢截图到剪贴板并保存 PNG；三指分开粘贴；四指轻点/长按退格。
-    四指保持 0.22 秒首次退格，0.4 秒起每 0.08 秒重复，移动或抬起停止。
+    双指并拢复制；双指分开粘贴；三指并拢截图；三指分开粘贴。
+    三指轻点回车；四指轻点/长按退格；五指轻点空格。
     控制-C 停止。首次 run 需要辅助功能权限；截图需要 macOS 录屏权限。
     """)
 }
@@ -162,6 +168,12 @@ func runSelfTest() -> Int32 {
     expect("双指并拢复制", [frame(0, pair(0.5)), frame(0.07, pair(0.5)), frame(0.15, pair(0.25)),
                           frame(0.2, pair(0.2)), frame(0.25, [])], [.copy])
     expect("双指分开粘贴", [frame(0, pair(0.25)), frame(0.07, pair(0.25)), frame(0.15, pair(0.5)), frame(0.2, [])], [.paste])
+    let fivePoints = [TouchPoint(x: 0.2, y: 0.4), TouchPoint(x: 0.35, y: 0.4),
+                      TouchPoint(x: 0.5, y: 0.4), TouchPoint(x: 0.65, y: 0.4),
+                      TouchPoint(x: 0.8, y: 0.4)]
+    expect("五指轻点空格", [frame(0, fivePoints), frame(0.18, [])], [.space])
+    expect("三指轻点回车", [frame(0, triple(0.4)), frame(0.18, [])], [.returnKey])
+    expect("五指轻点空格映射", [frame(0, fivePoints), frame(0.45, [])], [.space])
     expect("三指并拢截图", [frame(0, triple(0.45)), frame(0.07, triple(0.45)), frame(0.16, triple(0.2)), frame(0.2, [])], [.screenshot])
     expect("三指分开粘贴", [frame(0, triple(0.2)), frame(0.07, triple(0.2)), frame(0.16, triple(0.45)), frame(0.2, [])], [.paste])
     expect("四指轻点退格", [frame(0, [TouchPoint(x: 0.3, y: 0.4), TouchPoint(x: 0.45, y: 0.4),
@@ -269,8 +281,14 @@ case "check", "observe", "run":
         let performer: any ActionPerforming = observe ? ObserveOnlyPerformer() : SystemActionPerformer()
         let engine = GestureEngine(performer: performer, observe: observe)
         engine.start()
-        try monitor.start { frame in engine.receive(frame) }
-        Log.info(observe ? "只观察模式已启动，不会注入动作；Control-C 停止" : "手势监听已启动；Control-C 停止")
+        do {
+            try monitor.start { frame in engine.receive(frame) }
+        } catch {
+            engine.stop()
+            throw error
+        }
+        let startup = observe ? "只观察模式已启动，不会注入动作；Control-C 停止" : "手势监听已启动；Control-C 停止"
+        Log.info(startup)
 
         signal(SIGINT, SIG_IGN)
         signal(SIGTERM, SIG_IGN)
@@ -281,7 +299,9 @@ case "check", "observe", "run":
                 Log.info("正在停止")
                 monitor.stop()
                 engine.stop()
-                exit(0)
+                DispatchQueue.main.async {
+                    exit(0)
+                }
             }
             source.resume()
             signalSources.append(source)

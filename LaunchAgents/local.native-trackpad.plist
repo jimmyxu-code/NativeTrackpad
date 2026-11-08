@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.native-trackpad</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhuanzmima0000/Library/Application Support/NativeTrackpad/TrackpadGestures.app/Contents/MacOS/TrackpadGestures</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/zhuanzmima0000/Library/Application Support/NativeTrackpad</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>StandardOutPath</key>
+    <string>/Users/zhuanzmima0000/Library/Application Support/NativeTrackpad/logs/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/zhuanzmima0000/Library/Application Support/NativeTrackpad/logs/stderr.log</string>
+</dict>
+</plist>

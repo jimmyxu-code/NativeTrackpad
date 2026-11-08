@@ -19,6 +19,10 @@ final class SystemActionPerformer: @unchecked Sendable, ActionPerforming {
             postKey(9, command: true)
         case .deleteBackward:
             postKey(51, command: false)
+        case .space:
+            postKey(49, command: false)
+        case .returnKey:
+            postKey(36, command: false)
         case .screenshot:
             startScreenshot()
         }
@@ -36,7 +40,16 @@ final class SystemActionPerformer: @unchecked Sendable, ActionPerforming {
         down.post(tap: .cghidEventTap)
         Thread.sleep(forTimeInterval: 0.01)
         up.post(tap: .cghidEventTap)
-        Log.info("已投递：\(command ? "Command-" : "")\(keyCode == 51 ? "退格" : keyCode == 8 ? "C" : "V")")
+        let name: String
+        switch keyCode {
+        case 51: name = "退格"
+        case 49: name = "空格"
+        case 36: name = "回车"
+        case 8: name = "C"
+        case 9: name = "V"
+        default: name = "键码 \(keyCode)"
+        }
+        Log.info("已投递：\(command ? "Command-" : "")\(name)")
     }
 
     private func startScreenshot() {

@@ -26,6 +26,8 @@ enum GestureAction: String, Sendable {
     case paste = "粘贴 Command-V"
     case screenshot = "区域截图（PNG + 剪贴板）"
     case deleteBackward = "退格"
+    case space = "空格"
+    case returnKey = "回车"
 }
 
 struct Recognition: Sendable {
@@ -43,6 +45,7 @@ struct GestureConfiguration: Sendable {
     var minimumDistanceChange = 0.045
     var maximumCentroidDrift = 0.16
     var maximumTapDuration = 0.32
+    var maximumFiveTapDuration = 0.5
     var maximumTapMovement = 0.035
     var deleteHoldActivationDelay = 0.22
     var deleteRepeatDelay = 0.4
@@ -69,7 +72,6 @@ private struct DeviceSession {
     var tracks: [Int32: FingerTrack] = [:]
     var candidate: PinchCandidate?
     var triggered = false
-    var sawFour = false
     var maximumActiveCount = 0
     var tapCancelled = false
     var fourRepeatCancelled = false
@@ -82,6 +84,11 @@ struct GestureRecognizer: Sendable {
     var configuration = GestureConfiguration()
     private var sessions: [UInt: DeviceSession] = [:]
     private var lastRecognitionAt: [UInt: Double] = [:]
+
+    mutating func reset() {
+        sessions.removeAll()
+        lastRecognitionAt.removeAll()
+    }
 
     mutating func process(_ frame: TouchFrame) -> [Recognition] {
         let active = frame.touches.filter { (3...5).contains($0.state) }
@@ -100,16 +107,20 @@ struct GestureRecognizer: Sendable {
         }
 
         session.maximumActiveCount = max(session.maximumActiveCount, active.count)
-        session.sawFour = session.sawFour || active.count == 4
-        if active.count > 4 || frame.timestamp - session.startedAt > configuration.maximumTapDuration {
+        let tapDurationLimit = active.count == 5 ? configuration.maximumFiveTapDuration : configuration.maximumTapDuration
+        if active.count > 5 || frame.timestamp - session.startedAt > tapDurationLimit {
             session.tapCancelled = true
         }
-        if active.count > 4 || session.tracks.values.contains(where: { $0.first.distance(to: $0.current) > configuration.maximumTapMovement }) {
-            session.tapCancelled = true
+        let moved = session.tracks.values.contains { $0.first.distance(to: $0.current) > configuration.maximumTapMovement }
+        if active.count > 4 || moved {
             session.fourRepeatCancelled = true
+        }
+        if moved {
+            session.tapCancelled = true
         }
 
         var recognitions: [Recognition] = []
+
         if active.count == 4 {
             if session.fourStartedAt == nil {
                 session.fourStartedAt = frame.timestamp
@@ -153,13 +164,28 @@ struct GestureRecognizer: Sendable {
     private mutating func finishSession(device: UInt, timestamp: Double) -> [Recognition] {
         guard let session = sessions.removeValue(forKey: device) else { return [] }
         let duration = timestamp - session.startedAt
-        let isTap = session.sawFour && session.maximumActiveCount == 4 && !session.tapCancelled &&
-            !session.triggered && duration >= 0 && duration <= configuration.maximumTapDuration &&
+        let tapDurationLimit = session.maximumActiveCount == 5 ? configuration.maximumFiveTapDuration : configuration.maximumTapDuration
+        let isTap = [3, 4, 5].contains(session.maximumActiveCount) &&
+            !session.tapCancelled && !session.triggered && duration >= 0 &&
+            duration <= tapDurationLimit &&
             timestamp - (lastRecognitionAt[device] ?? -.infinity) >= configuration.rearmDelay
         guard isTap else { return [] }
         lastRecognitionAt[device] = timestamp
-        return [Recognition(action: .deleteBackward, device: device, timestamp: timestamp,
-                            detail: String(format: "四指轻点，时长 %.0f ms", duration * 1000))]
+        let action: GestureAction
+        let name: String
+        switch session.maximumActiveCount {
+        case 3:
+            action = .returnKey
+            name = "三指"
+        case 4:
+            action = .deleteBackward
+            name = "四指"
+        default:
+            action = .space
+            name = "五指"
+        }
+        return [Recognition(action: action, device: device, timestamp: timestamp,
+                            detail: String(format: "%@轻点，时长 %.0f ms", name, duration * 1000))]
     }
 
     private func recognizePinch(frame: TouchFrame, active: [TouchSample], session: inout DeviceSession) -> Recognition? {
@@ -188,6 +214,9 @@ struct GestureRecognizer: Sendable {
             let ratio = distance / candidate.baselineDistance
             let change = abs(distance - candidate.baselineDistance)
             let drift = centroid.distance(to: candidate.baselineCentroid)
+            if active.count == 2 && change >= 0.02 {
+                session.tapCancelled = true
+            }
             guard change >= configuration.minimumDistanceChange,
                   drift <= configuration.maximumCentroidDrift,
                   ratio <= configuration.pinchInRatio || ratio >= configuration.pinchOutRatio else {
