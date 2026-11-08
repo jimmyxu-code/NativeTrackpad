@@ -70,7 +70,7 @@ do_start() {
   do_stop quiet
   mkdir -p "$LOG_DIR" "$HOME/Library/LaunchAgents"
   cp -R "$ROOT/TrackpadGestures.app" "$SUPPORT/"
-  codesign --force --sign - "$SUPPORT/TrackpadGestures.app" >/dev/null
+  codesign --force --sign "NativeTrackpadLocal" "$SUPPORT/TrackpadGestures.app" >/dev/null
   touch "$OUT_LOG" "$ERR_LOG"
   local log_offset
   log_offset="$(stat -f%z "$ERR_LOG")"

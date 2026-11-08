@@ -15,7 +15,7 @@
 | 四指长按 | 约 0.22 秒首次退格，0.4 秒起每 0.08 秒连续退格；移动或抬起即停 |
 | 五指轻点（不超过 0.5 秒） | 空格 |
 
-取消截图不会改变剪贴板。双指短按保留系统右键，不注入回车。
+取消截图不会改变剪贴板。双指短按保留系统右键，不注入回车。引擎对触点帧设置 150ms 超时：丢失抬起帧时安全结束当前会话并清理过期触点，避免重复触发和手势卡死。
 
 ## 登录自启
 
@@ -56,6 +56,8 @@
 
 - **辅助功能**：用于读取触控板和投递键盘动作。若系统提示，请在「系统设置 → 隐私与安全性 → 辅助功能」中允许 `TrackpadGestures`。
 - **录屏**：三指并拢区域截图需要该权限。
+- **稳定签名**：自启应用使用本机 `NativeTrackpadLocal` 代码签名身份，避免 ad hoc 重签后代码哈希变化导致权限失效。签名证书只保存在登录钥匙串，不进入仓库。
+- **权限初始化**：程序启动时先初始化 `NSApplication`，再检查辅助功能权限，确保系统能够展示授权提示。
 
 ## 构建
 
@@ -65,7 +67,7 @@ swift build -c release --disable-sandbox --scratch-path /tmp/native-trackpad-bui
 cp /tmp/native-trackpad-build/release/TrackpadGestures bin/TrackpadGestures.new
 mv bin/TrackpadGestures.new bin/TrackpadGestures
 cp bin/TrackpadGestures TrackpadGestures.app/Contents/MacOS/TrackpadGestures
-codesign --force --sign - TrackpadGestures.app
+codesign --force --sign NativeTrackpadLocal TrackpadGestures.app
 ./bin/TrackpadGestures self-test
 ./control.sh restart
 ```

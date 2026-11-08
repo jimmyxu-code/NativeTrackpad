@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import CoreFoundation
 import Darwin
@@ -57,10 +58,17 @@ final class GestureEngine: @unchecked Sendable {
     private func advanceClock() {
         guard running else { return }
         let now = DispatchTime.now().uptimeNanoseconds
-        for latest in latestFrames.values {
+        for (device, latest) in latestFrames {
+            let age = Double(now - latest.receivedAt) / 1_000_000_000
             var frame = latest.frame
-            frame.timestamp += Double(now - latest.receivedAt) / 1_000_000_000
+            frame.timestamp += age
+            if age > 0.15 {
+                frame.touches = []
+            }
             process(frame, logFrame: false)
+            if age > 0.15 {
+                latestFrames.removeValue(forKey: device)
+            }
         }
     }
 
@@ -137,10 +145,30 @@ func verifyEngineHold() -> [GestureAction] {
     let performer = SelfTestActionPerformer()
     let engine = GestureEngine(performer: performer, observe: false)
     engine.start()
-    engine.receive(frame)
+    for index in 0..<10 {
+        var current = frame
+        current.timestamp = Double(index) * 0.05
+        engine.receive(current)
+        Thread.sleep(forTimeInterval: 0.05)
+    }
     let actions = performer.waitForActions(3, timeout: 1.2)
     engine.stop()
     return actions
+}
+
+func verifyStaleFrameStops() -> Bool {
+    let points = [TouchPoint(x: 0.3, y: 0.4), TouchPoint(x: 0.45, y: 0.4),
+                  TouchPoint(x: 0.6, y: 0.4), TouchPoint(x: 0.75, y: 0.4)]
+    let frame = TouchFrame(device: 100, timestamp: 0,
+                           touches: points.enumerated().map { TouchSample(id: Int32($0.offset + 1), state: 4, position: $0.element) })
+    let performer = SelfTestActionPerformer()
+    let engine = GestureEngine(performer: performer, observe: false)
+    engine.start()
+    engine.receive(frame)
+    let first = performer.waitForActions(1, timeout: 0.8)
+    Thread.sleep(forTimeInterval: 0.3)
+    engine.stop()
+    return first == [.deleteBackward] && performer.actions == [.deleteBackward]
 }
 
 func runSelfTest() -> Int32 {
@@ -208,7 +236,11 @@ func runSelfTest() -> Int32 {
     checks += 1
     let timerActions = verifyEngineHold()
     if timerActions != [.deleteBackward, .deleteBackward, .deleteBackward] {
-        failures.append("定时器无后续帧连续退格：实际 \(timerActions)")
+        failures.append("新鲜帧连续退格：实际 \(timerActions)")
+    }
+    checks += 1
+    if !verifyStaleFrameStops() {
+        failures.append("丢失抬起帧后仍持续触发")
     }
 
     if failures.isEmpty {
@@ -218,6 +250,10 @@ func runSelfTest() -> Int32 {
     for failure in failures { FileHandle.standardError.write(Data("FAIL \(failure)\n".utf8)) }
     print("self-test：\(checks - failures.count)/\(checks) 通过")
     return 1
+}
+
+MainActor.assumeIsolated {
+    _ = NSApplication.shared
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
