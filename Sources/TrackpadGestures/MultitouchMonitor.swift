@@ -93,6 +93,8 @@ final class MultitouchMonitor: @unchecked Sendable {
     private var frameHandler: (@Sendable (TouchFrame) -> Void)?
     private let stateLock = NSLock()
     private var running = false
+    private var lastFrameAt = UInt64(0)
+    private var lastRestartAt = UInt64(0)
 
     init() throws {
         guard MemoryLayout<MTTouch>.size == 96, MemoryLayout<MTTouch>.stride == 96,
@@ -130,6 +132,7 @@ final class MultitouchMonitor: @unchecked Sendable {
         stateLock.lock()
         defer { stateLock.unlock() }
         guard !running else { return }
+        try reloadDevices()
         frameHandler = handler
         for device in devices {
             register?(device, contactCallback, Unmanaged.passUnretained(self).toOpaque())
@@ -145,6 +148,9 @@ final class MultitouchMonitor: @unchecked Sendable {
             }
             startedDevices.append(device)
         }
+        let now = DispatchTime.now().uptimeNanoseconds
+        lastFrameAt = now
+        lastRestartAt = now
         running = true
     }
 
@@ -162,10 +168,42 @@ final class MultitouchMonitor: @unchecked Sendable {
         }
         queue.sync {
             frameHandler = nil
+            deviceList = nil
+            devices = []
         }
     }
 
+    func healthCheck() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        stateLock.lock()
+        let stale = now - lastFrameAt > 10_000_000_000 && now - lastRestartAt > 10_000_000_000
+        let handler = frameHandler
+        stateLock.unlock()
+        guard stale, let handler else { return }
+        Log.info("触点回调超过 10 秒无新帧，重新注册触控设备")
+        stop()
+        do {
+            try start(handler: handler)
+            Log.info("触点监听已自动恢复")
+        } catch {
+            Log.error("触点监听自动恢复失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func reloadDevices() throws {
+        guard let list = createList?()?.takeRetainedValue() else {
+            throw MultitouchError.noDevices
+        }
+        deviceList = list
+        let count = CFArrayGetCount(list)
+        devices = (0..<count).compactMap { CFArrayGetValueAtIndex(list, $0) }
+        guard !devices.isEmpty else { throw MultitouchError.noDevices }
+    }
+
     fileprivate func receive(_ frame: TouchFrame) {
+        stateLock.lock()
+        lastFrameAt = DispatchTime.now().uptimeNanoseconds
+        stateLock.unlock()
         queue.async { [weak self] in
             guard let self, self.running else { return }
             self.frameHandler?(frame)

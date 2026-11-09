@@ -325,6 +325,12 @@ case "check", "observe", "run":
         }
         let startup = observe ? "只观察模式已启动，不会注入动作；Control-C 停止" : "手势监听已启动；Control-C 停止"
         Log.info(startup)
+        let healthTimer = DispatchSource.makeTimerSource(queue: .main)
+        healthTimer.schedule(deadline: .now() + 5, repeating: 5)
+        healthTimer.setEventHandler {
+            monitor.healthCheck()
+        }
+        healthTimer.resume()
 
         signal(SIGINT, SIG_IGN)
         signal(SIGTERM, SIG_IGN)
@@ -333,6 +339,7 @@ case "check", "observe", "run":
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler {
                 Log.info("正在停止")
+                healthTimer.cancel()
                 monitor.stop()
                 engine.stop()
                 DispatchQueue.main.async {
@@ -342,7 +349,7 @@ case "check", "observe", "run":
             source.resume()
             signalSources.append(source)
         }
-        withExtendedLifetime(signalSources) {
+        withExtendedLifetime((signalSources, healthTimer)) {
             RunLoop.main.run()
         }
     } catch {

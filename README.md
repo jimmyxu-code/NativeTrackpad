@@ -23,6 +23,7 @@
 
 - 用户登录后自动启动应用。
 - 应用退出后，LaunchAgent 按 5 秒间隔重新拉起。
+- 触点回调超过 10 秒没有新帧时，自动刷新设备列表并重新注册监听，覆盖睡眠唤醒和设备状态变化后的失效场景。
 - `control.sh stop` 会停止应用并移除自启注册；下次 `start` 会重新注册。
 - 运行副本安装在 `~/Library/Application Support/NativeTrackpad`，避免中文路径影响 LaunchAgent。
 - 日志位于 `~/Library/Application Support/NativeTrackpad/logs/`。
